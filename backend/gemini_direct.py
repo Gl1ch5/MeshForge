@@ -472,9 +472,10 @@ class _DirectPool:
                 saved_str = await imgs[0].save(
                     path=str(out_path.parent),
                     filename=out_path.name,
-                    client=client.client,
                     full_size=True,
                 )
+                if not saved_str:
+                    raise RuntimeError(f"Не удалось сохранить изображение в {out_path}")
                 saved_p = Path(saved_str)
                 if saved_p != out_path and saved_p.is_file():
                     saved_p.replace(out_path)
