@@ -309,10 +309,11 @@ class AppHandler(BaseHTTPRequestHandler):
         if p == "/api/models":
             try:
                 cfg = pipeline.load_settings()
+                kind = str(body.get("kind") or "all")
                 if body.get("provider_mode") == "gemini_cookies" or (not body.get("base_url") and cfg.get("provider_mode") == "gemini_cookies"):
-                    return self._send_json({"ok": True, "models": gemini_direct.list_available_models()})
-                models = pipeline.fetch_models(body.get("base_url", ""), body.get("api_key", ""))
-                return self._send_json({"ok": True, "models": models})
+                    return self._send_json({"ok": True, "models": gemini_direct.list_available_models(kind=kind)})
+                models, raw = pipeline.fetch_models_detailed(body.get("base_url", ""), body.get("api_key", ""), kind=kind)
+                return self._send_json({"ok": True, "models": models, "raw_models": raw if not models else []})
             except Exception as e:
                 return self._send_json({"ok": False, "error": str(e)}, 400)
 

@@ -208,7 +208,7 @@ def load_settings() -> dict:
         "text_model": "gemini-авто",
         "image_base_url": "https://api.openai.com/v1",
         "image_api_key": "",
-        "image_model": "gemini-image",
+        "image_model": "nano-banana",
         "blender_path": "",
         "use_bpy": False,
         "setup_done": False,

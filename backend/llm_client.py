@@ -57,11 +57,80 @@ def http_json(url: str, method: str = "GET", headers: dict | None = None, payloa
         raise RuntimeError(f"HTTP {e.code} {url}: {body[:500]}")
 
 
-def fetch_models(base_url: str, api_key: str) -> list[str]:
+_IMAGE_MODEL_RE = re.compile(
+    r"(?:gpt-image|chatgpt-image|dall-e|imagen|nano-banana|imagegeneration|"
+    r"gemini-[a-z0-9._-]*-image|flux|kontext|stable-diffusion|sdxl|sd-?3(?:\.\d)?|"
+    r"seedream|seededit|ideogram|recraft|midjourney|(?:^|[-_/])mj[-_/\d]|niji|"
+    r"qwen-?image|wanx|grok-[a-z0-9._-]*-image|hunyuan-?image|hidream|kolors|"
+    r"kandinsky|cogview|pixart|sana|bagel|z-image|reve(?:-?image)?|playground-v|"
+    r"luma[a-z0-9._-]*photon|text-to-image|txt2img|(?:^|[-_/])t2i(?:$|[-_/])|"
+    r"image-gen|image-generation|(?:[-_/])image(?:$|[-_/](?:preview|pro|flash|mini|lite|ultra|turbo|v\d)))",
+    re.IGNORECASE,
+)
+_NON_IMAGE_MODEL_RE = re.compile(
+    r"(?:embedding|embed|whisper|tts|transcribe|audio|speech|moderation|rerank|realtime|ocr|-vl(?:$|[-_])|vision)",
+    re.IGNORECASE,
+)
+_NON_TEXT_MODEL_RE = re.compile(
+    r"(?:embedding|embed|whisper|tts|transcribe|moderation|rerank|dall-e|gpt-image|chatgpt-image|"
+    r"imagen|nano-banana|flux|stable-diffusion|sdxl|sd-?3(?:\.\d)?|seedream|seededit|"
+    r"ideogram|recraft|midjourney|qwen-?image|wanx|hidream|kolors|kandinsky|cogview|"
+    r"pixart|sana|z-image|text-to-image|txt2img)",
+    re.IGNORECASE,
+)
+
+
+def is_image_gen_model(model_id: str, meta: dict | None = None) -> bool:
+    mid = (model_id or "").strip()
+    if not mid:
+        return False
+    if isinstance(meta, dict):
+        mtype = str(meta.get("type", "")).lower()
+        if mtype in ("image", "image-generation", "text-to-image", "t2i"):
+            return True
+        if mtype in ("embedding", "audio", "tts", "asr", "moderation"):
+            return False
+        arch = meta.get("architecture") if isinstance(meta.get("architecture"), dict) else {}
+        out_mods = meta.get("output_modalities") or arch.get("output_modalities") or []
+        if isinstance(out_mods, list) and "image" in [str(x).lower() for x in out_mods]:
+            return True
+        methods = meta.get("supported_generation_methods") or []
+        if isinstance(methods, list) and any(str(x).lower() in ("predict", "generateimage") for x in methods):
+            return True
+    if _NON_IMAGE_MODEL_RE.search(mid) and not re.search(r"(?:gpt-image|dall-e|imagen|nano-banana|flux|gemini-[a-z0-9._-]*-image)", mid, re.IGNORECASE):
+        return False
+    return bool(_IMAGE_MODEL_RE.search(mid))
+
+
+def is_text_chat_model(model_id: str, meta: dict | None = None) -> bool:
+    mid = (model_id or "").strip()
+    if not mid:
+        return False
+    if isinstance(meta, dict):
+        mtype = str(meta.get("type", "")).lower()
+        if mtype in ("image", "image-generation", "text-to-image", "t2i", "embedding", "audio", "tts", "asr", "moderation"):
+            return False
+    return not bool(_NON_TEXT_MODEL_RE.search(mid))
+
+
+def fetch_models_detailed(base_url: str, api_key: str, kind: str = "all") -> tuple[list[str], list[str]]:
     base = base_url.rstrip("/")
     hdrs = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     res = http_json(f"{base}/models", method="GET", headers=hdrs, timeout=20)
-    return [str(m.get("id")) for m in res.get("data", []) if m.get("id")]
+    items = [m for m in res.get("data", []) if isinstance(m, dict) and m.get("id")]
+    raw = [str(m.get("id")) for m in items]
+    if kind == "image":
+        filtered = [str(m.get("id")) for m in items if is_image_gen_model(str(m.get("id")), m)]
+        return filtered, raw
+    if kind == "text":
+        filtered = [str(m.get("id")) for m in items if is_text_chat_model(str(m.get("id")), m)]
+        return (filtered or raw), raw
+    return raw, raw
+
+
+def fetch_models(base_url: str, api_key: str, kind: str = "all") -> list[str]:
+    filtered, raw = fetch_models_detailed(base_url, api_key, kind=kind)
+    return filtered if kind != "all" else raw
 
 
 def file_to_data_url(path: Path) -> str:

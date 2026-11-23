@@ -166,8 +166,15 @@ def summarize_cookies(cookies: list[dict]) -> dict:
     }
 
 
+IMAGE_GEN_MODELS = ["nano-banana", "nano-banana-pro"]
+IMAGE_GEN_ALIASES = {"nano-banana", "nano-banana-pro", "gemini-image", "imagen-3", "imagen-4", "gemini-2.5-flash-image", "gemini-3-pro-image"}
+
+
 def _resolve_model(client: GeminiClient, model_name: str | None) -> Any:
     if not model_name:
+        if not hasattr(client, "list_models"):
+            from gemini_webapi.constants import Model
+            return Model.UNSPECIFIED
         return None
     m = model_name.strip().lower()
     aliases = {
@@ -181,9 +188,15 @@ def _resolve_model(client: GeminiClient, model_name: str | None) -> Any:
         "gemini-flash": ["gemini-4-hydrogen", "gemini-3.0-flash", "gemini-flash"],
         "gemini-2.5-pro": ["gemini-neon", "gemini-3.0-pro", "gemini-pro"],
         "gemini-pro": ["gemini-neon", "gemini-3.0-pro", "gemini-pro"],
-        "gemini-image": ["gemini-авто", "gemini-4-hydrogen", "gemini-3.0-flash", "unspecified"],
-        "imagen-3": ["gemini-авто", "gemini-4-hydrogen", "gemini-3.0-flash", "unspecified"],
-        "dall-e-3": ["gemini-авто", "gemini-4-hydrogen", "gemini-3.0-flash", "unspecified"],
+        "nano-banana": ["gemini-авто", "gemini-4-hydrogen", "gemini-3.0-flash", "unspecified"],
+        "nano-banana-pro": ["gemini-neon", "gemini-carbon", "gemini-3.0-pro", "gemini-авто", "unspecified"],
+        "nano-banana-2": ["gemini-авто", "gemini-4-hydrogen", "gemini-3.0-flash", "unspecified"],
+        "gemini-image": ["unspecified", "gemini-авто", "gemini-4-hydrogen", "gemini-3.0-flash"],
+        "gemini-2.5-flash-image": ["unspecified", "gemini-авто", "gemini-4-hydrogen", "gemini-3.0-flash"],
+        "gemini-3-pro-image": ["unspecified", "gemini-авто", "gemini-4-hydrogen", "gemini-3.0-flash"],
+        "imagen-3": ["unspecified", "gemini-авто", "gemini-4-hydrogen", "gemini-3.0-flash"],
+        "imagen-4": ["unspecified", "gemini-авто", "gemini-4-hydrogen", "gemini-3.0-flash"],
+        "dall-e-3": ["unspecified", "gemini-авто", "gemini-4-hydrogen", "gemini-3.0-flash"],
     }
     targets = aliases.get(m, [m])
 
@@ -191,6 +204,8 @@ def _resolve_model(client: GeminiClient, model_name: str | None) -> Any:
     if hasattr(client, "list_models"):
         try:
             for t in targets:
+                if t == "unspecified":
+                    return None
                 for av in client.list_models() or []:
                     av_name = getattr(av, "model_name", "").lower()
                     av_disp = getattr(av, "display_name", "").lower()
@@ -201,19 +216,42 @@ def _resolve_model(client: GeminiClient, model_name: str | None) -> Any:
             pass
         return None
 
-    # gemini-webapi 1.x fallback via Model enum
+    # gemini-webapi 1.x fallback via Model enum (never return None: 1.x rejects model=None)
+    from gemini_webapi.constants import Model
+    for t in targets:
+        if t == "unspecified":
+            return Model.UNSPECIFIED
+        for member in Model:
+            m_val = str(member.value[0]).lower() if isinstance(member.value, tuple) else str(member.value).lower()
+            if m_val == t or t in m_val:
+                return member
+    return Model.UNSPECIFIED
+
+
+def _supports_kwarg(fn: Any, kw: str) -> bool:
     try:
-        from gemini_webapi.constants import Model
-        for t in targets:
-            if t == "unspecified":
-                return Model.UNSPECIFIED
-            for member in Model:
-                m_val = str(member.value[0]).lower() if isinstance(member.value, tuple) else str(member.value).lower()
-                if m_val == t or t in m_val:
-                    return member
+        import inspect
+        return kw in inspect.signature(fn).parameters
     except Exception:
-        pass
-    return None
+        return False
+
+
+def _extract_images(out: Any) -> list[Any]:
+    cands = list(getattr(out, "candidates", None) or [])
+    chosen_idx = int(getattr(out, "chosen", 0) or 0)
+    ordered = []
+    if 0 <= chosen_idx < len(cands):
+        ordered.append(cands[chosen_idx])
+    ordered.extend(c for i, c in enumerate(cands) if i != chosen_idx)
+    for c in ordered:
+        gen = getattr(c, "generated_images", None) or []
+        if gen:
+            return list(gen)
+    for c in ordered:
+        imgs = getattr(c, "images", None) or []
+        if imgs:
+            return list(imgs)
+    return list(getattr(out, "images", None) or [])
 
 
 class _DirectPool:
@@ -444,7 +482,10 @@ class _DirectPool:
                     client = await self._get_or_connect(acc["id"])
                     resolved = _resolve_model(client, model)
                     files_arg = [str(p) for p in temp_files] if temp_files else None
-                    out = await client.generate_content(prompt, files=files_arg, model=resolved)
+                    gen_kw: dict[str, Any] = {"files": files_arg}
+                    if resolved is not None:
+                        gen_kw["model"] = resolved
+                    out = await client.generate_content(prompt, **gen_kw)
                     return (out.text or "").strip()
                 except Exception as e:
                     last_err = str(e)
@@ -457,23 +498,41 @@ class _DirectPool:
     async def generate_image(self, prompt: str, out_path: Path, model: str | None = None, ref_paths: list[Path] | None = None) -> Path:
         files_arg = [str(p) for p in (ref_paths or []) if p and p.is_file()] or None
         last_err = "Unknown error"
+        want_pro = "pro" in (model or "").lower()
         for acc in self._pick_candidates():
             try:
                 client = await self._get_or_connect(acc["id"])
-                resolved = _resolve_model(client, model)
-                out = await client.generate_content(f"Generate an image: {prompt}", files=files_arg, model=resolved)
-                imgs = out.images or []
+                resolved = _resolve_model(client, model or "nano-banana")
+                gen_kw: dict[str, Any] = {"files": files_arg}
+                if resolved is not None:
+                    gen_kw["model"] = resolved
+                if want_pro and _supports_kwarg(client.generate_content, "use_pro"):
+                    gen_kw["use_pro"] = True
+                out = await client.generate_content(f"Generate an image: {prompt}", **gen_kw)
+                imgs = _extract_images(out)
                 if not imgs:
                     # Retry once with default model & simplified phrasing on transient Gemini refusal/glitch
-                    out = await client.generate_content(f"Create an image of {prompt}", files=files_arg, model=None)
-                    imgs = out.images or []
+                    retry_kw: dict[str, Any] = {"files": files_arg}
+                    if not hasattr(client, "list_models"):
+                        from gemini_webapi.constants import Model
+                        retry_kw["model"] = Model.G_3_0_FLASH if resolved == Model.UNSPECIFIED else Model.UNSPECIFIED
+                    if _supports_kwarg(client.generate_content, "use_pro"):
+                        retry_kw["use_pro"] = False
+                    out = await client.generate_content(f"Create an image of {prompt}", **retry_kw)
+                    imgs = _extract_images(out)
                 if not imgs:
                     raise RuntimeError(f"Gemini не вернул изображение: {(out.text or '')[:160]}")
-                saved_str = await imgs[0].save(
-                    path=str(out_path.parent),
-                    filename=out_path.name,
-                    full_size=True,
-                )
+                save_kw: dict[str, Any] = {
+                    "path": str(out_path.parent),
+                    "filename": out_path.name,
+                }
+                if _supports_kwarg(imgs[0].save, "client") and getattr(client, "client", None) is not None:
+                    save_kw["client"] = client.client
+                if _supports_kwarg(imgs[0].save, "full_size") or (
+                    hasattr(imgs[0], "_perform_save") and _supports_kwarg(imgs[0]._perform_save, "full_size")
+                ):
+                    save_kw["full_size"] = True
+                saved_str = await imgs[0].save(**save_kw)
                 if not saved_str:
                     raise RuntimeError(f"Не удалось сохранить изображение в {out_path}")
                 saved_p = Path(saved_str)
@@ -579,16 +638,22 @@ def reset_all_clients() -> None:
     _pool.run_sync(_pool.close_all_clients(), timeout=10)
 
 
-def list_available_models() -> list[str]:
-    base_list = ["gemini-авто", "gemini-4-hydrogen", "gemini-neon", "gemini-carbon", "gemini-image"]
-    seen = set(base_list)
+def list_available_models(kind: str = "all") -> list[str]:
+    if kind == "image":
+        return list(IMAGE_GEN_MODELS)
+
+    base_list = ["gemini-авто", "gemini-4-hydrogen", "gemini-neon", "gemini-carbon"]
+    seen = set(base_list) | IMAGE_GEN_ALIASES
     for a in (load_settings().get("gemini_accounts") or []):
         for m in a.get("models") or []:
             nm = m.get("name")
             if nm and nm not in seen:
                 seen.add(nm)
                 base_list.append(nm)
-    return base_list
+
+    if kind == "text":
+        return base_list
+    return base_list + list(IMAGE_GEN_MODELS)
 
 
 def generate_text(messages: list[dict], model: str | None = None) -> str:

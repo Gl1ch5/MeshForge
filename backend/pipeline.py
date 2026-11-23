@@ -12,7 +12,7 @@ from .config import (
     save_settings,
     scan_blender_installations,
 )
-from .llm_client import fetch_models
+from .llm_client import fetch_models, fetch_models_detailed, is_image_gen_model
 from .blender_bridge import run_bpy_stage, build_uv_guide_and_previews
 from .model_pipeline import run_full_generation, run_stage2_texture
 from .texture_pipeline import run_texture_generation, run_texture_pack, list_jobs
@@ -28,6 +28,8 @@ __all__ = [
     "save_settings",
     "scan_blender_installations",
     "fetch_models",
+    "fetch_models_detailed",
+    "is_image_gen_model",
     "run_bpy_stage",
     "build_uv_guide_and_previews",
     "run_full_generation",

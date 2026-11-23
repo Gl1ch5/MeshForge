@@ -394,10 +394,21 @@ async function refreshQuickModels() {
   const txtSel = document.getElementById("quickTextModel");
   const imgSel = document.getElementById("quickImageModel");
 
-  const fillSelect = (sel, items, cur) => {
-    const uniq = Array.from(new Set([cur, ...items].filter(Boolean)));
+  const fillSelect = (sel, items, cur, strict = false) => {
+    const clean = (items || []).filter(Boolean);
+    const uniq = strict && clean.length
+      ? Array.from(new Set(clean))
+      : Array.from(new Set([cur, ...clean].filter(Boolean)));
     sel.innerHTML = uniq.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
-    if (cur) sel.value = cur;
+    if (cur && uniq.includes(cur)) {
+      sel.value = cur;
+      return cur;
+    }
+    if (uniq.length) {
+      sel.value = uniq[0];
+      return uniq[0];
+    }
+    return "";
   };
 
   fillSelect(txtSel, [s.text_model], s.text_model);
@@ -405,20 +416,40 @@ async function refreshQuickModels() {
 
   try {
     if (s.provider_mode === "gemini_cookies") {
-      const r0 = await api("/api/models", { method: "POST", body: JSON.stringify({ provider_mode: "gemini_cookies" }) });
-      if (r0.ok && r0.models?.length) {
-        fillSelect(txtSel, r0.models, s.text_model);
-        fillSelect(imgSel, r0.models, s.image_model);
+      const [rTxt, rImg] = await Promise.all([
+        api("/api/models", { method: "POST", body: JSON.stringify({ provider_mode: "gemini_cookies", kind: "text" }) }),
+        api("/api/models", { method: "POST", body: JSON.stringify({ provider_mode: "gemini_cookies", kind: "image" }) }),
+      ]);
+      const patch = {};
+      if (rTxt.ok && rTxt.models?.length) {
+        const chosenTxt = fillSelect(txtSel, rTxt.models, s.text_model, true);
+        if (chosenTxt && chosenTxt !== s.text_model) patch.text_model = chosenTxt;
+      }
+      if (rImg.ok && rImg.models?.length) {
+        const chosenImg = fillSelect(imgSel, rImg.models, s.image_model, true);
+        if (chosenImg && chosenImg !== s.image_model) patch.image_model = chosenImg;
+      }
+      if (Object.keys(patch).length) {
+        await api("/api/settings", { method: "POST", body: JSON.stringify(patch) });
       }
       return;
     }
     if (s.text_base_url) {
-      const r1 = await api("/api/models", { method: "POST", body: JSON.stringify({ base_url: s.text_base_url, api_key: s.text_api_key }) });
+      const r1 = await api("/api/models", { method: "POST", body: JSON.stringify({ base_url: s.text_base_url, api_key: s.text_api_key, kind: "text" }) });
       if (r1.ok && r1.models?.length) fillSelect(txtSel, r1.models, s.text_model);
     }
     if (s.image_base_url) {
-      const r2 = await api("/api/models", { method: "POST", body: JSON.stringify({ base_url: s.image_base_url, api_key: s.image_api_key }) });
-      if (r2.ok && r2.models?.length) fillSelect(imgSel, r2.models, s.image_model);
+      const r2 = await api("/api/models", { method: "POST", body: JSON.stringify({ base_url: s.image_base_url, api_key: s.image_api_key, kind: "image" }) });
+      if (r2.ok) {
+        if (r2.models?.length) {
+          const chosenImg = fillSelect(imgSel, r2.models, s.image_model, true);
+          if (chosenImg && chosenImg !== s.image_model) {
+            await api("/api/settings", { method: "POST", body: JSON.stringify({ image_model: chosenImg }) });
+          }
+        } else if (s.image_base_url !== s.text_base_url && r2.raw_models?.length) {
+          fillSelect(imgSel, r2.raw_models, s.image_model);
+        }
+      }
     }
   } catch {}
 }
@@ -934,14 +965,19 @@ async function fetchModelsFor(kind) {
   const api_key = document.getElementById(kind === "text" ? "sTextKey" : "sImgKey").value.trim();
   const msg = document.getElementById("setMsg");
   msg.textContent = "Загрузка списка моделей...";
-  const res = await api("/api/models", { method: "POST", body: JSON.stringify({ base_url, api_key }) });
+  const res = await api("/api/models", { method: "POST", body: JSON.stringify({ base_url, api_key, kind }) });
   if (!res.ok) {
     msg.textContent = "Ошибка: " + res.error;
     return;
   }
   const dl = document.getElementById(kind === "text" ? "textModelsList" : "imgModelsList");
-  dl.innerHTML = (res.models || []).map(m => `<option value="${esc(m)}">`).join("");
-  msg.textContent = `Загружено моделей: ${(res.models || []).length}`;
+  const list = (res.models && res.models.length) ? res.models : (res.raw_models || []);
+  dl.innerHTML = list.map(m => `<option value="${esc(m)}">`).join("");
+  if (kind === "image" && !(res.models || []).length && (res.raw_models || []).length) {
+    msg.textContent = `Image-модели не распознаны, показаны все (${res.raw_models.length})`;
+  } else {
+    msg.textContent = `Загружено моделей: ${(res.models || []).length}`;
+  }
 }
 
 async function saveSettings() {
