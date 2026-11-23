@@ -653,7 +653,7 @@ def apply_texture_and_export(
             n_img = bpy.data.images.load(str(Path(normal_path).resolve()))
             n_img.colorspace_settings.name = "Non-Color"
             n_node.image = n_img
-            n_img.interpolation = "Closest" if ps1_mode else "Linear"
+            n_node.interpolation = "Closest" if ps1_mode else "Linear"
             nmap = nt.nodes.new("ShaderNodeNormalMap")
             nmap.inputs["Strength"].default_value = 0.85
             nt.links.new(n_node.outputs["Color"], nmap.inputs["Color"])
