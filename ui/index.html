@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MeshForge</title>
+  <link rel="icon" type="image/png" href="/assets/icon.png" />
+  <link rel="stylesheet" href="/ui/styles.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <img src="/assets/icon.png" alt="MeshForge" class="brand-icon" onerror="this.style.display='none'" />
+      <h1>MeshForge</h1>
+      <span id="runtimeBadge" class="badge warn">Проверка Blender...</span>
+      <span id="aiModeBadge" class="badge">API</span>
+    </div>
+    <div class="row">
+      <button class="btn sm" onclick="openWizard(true)">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M12 2l3 6 6 1-4.5 4.2 1 6.3L12 16.5 6.5 19.5l1-6.3L3 9l6-1z"/></svg>
+        Мастер Blender
+      </button>
+      <button class="btn sm" onclick="openSettings()">
+        <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Настройки API
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <div id="modeTabs" class="tabs" role="tablist" aria-label="Режим работы">
+        <button class="tab active" style="flex:1;justify-content:center;" onclick="setAppMode('model', this)">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7l9-5z"/><path d="M12 22V12M21 7l-9 5-9-5"/></svg>
+          Модель
+        </button>
+        <button class="tab" style="flex:1;justify-content:center;" onclick="setAppMode('texture', this)">
+          <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          Текстура
+        </button>
+        <button class="tab" style="flex:1;justify-content:center;" onclick="setAppMode('pack', this)">
+          <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
+          Пак
+        </button>
+      </div>
+
+      <div>
+        <label id="promptLabel" for="promptInput">Описание 3D-модели</label>
+        <textarea id="promptInput" rows="3"></textarea>
+      </div>
+
+      <div id="refsBlock">
+        <div class="row between">
+          <label style="margin:0;">Референсы (опционально)</label>
+          <div>
+            <input id="refFileInput" type="file" accept="image/*" multiple class="hidden" onchange="addRefFiles(this.files)" />
+            <button class="btn sm" type="button" onclick="document.getElementById('refFileInput').click()">
+              <svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Добавить
+            </button>
+          </div>
+        </div>
+        <div id="refStrip" class="ref-strip" style="margin-top:8px;"></div>
+      </div>
+
+      <div class="row">
+        <div style="flex:1;">
+          <label for="styleSelect">Стиль</label>
+          <select id="styleSelect"></select>
+        </div>
+        <div style="flex:1;">
+          <label for="texSizeSelect">Размер</label>
+          <select id="texSizeSelect">
+            <option value="256">256 × 256</option>
+            <option value="512" selected>512 × 512</option>
+            <option value="1024">1024 × 1024</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Inline model selectors -->
+      <div class="box-panel">
+        <div class="row between">
+          <span style="font-size:12px;font-weight:500;color:var(--muted);">Модели API</span>
+          <button class="btn xs" type="button" onclick="refreshQuickModels()">
+            <svg class="ico" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Обновить
+          </button>
+        </div>
+        <div class="row">
+          <div style="flex:1;">
+            <label for="quickTextModel">Текст / Код</label>
+            <select id="quickTextModel" onchange="onQuickModelChange()"></select>
+          </div>
+          <div style="flex:1;">
+            <label for="quickImageModel">Картинки</label>
+            <select id="quickImageModel" onchange="onQuickModelChange()"></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Texture & Pack options -->
+      <div id="texOptionsBox" class="box-panel hidden">
+        <div class="row between">
+          <label class="chk"><input type="checkbox" id="chkSeamless" checked /> Бесшовная</label>
+          <label class="chk"><input type="checkbox" id="chkEnhance" checked /> Улучшайзер ИИ</label>
+        </div>
+        <div id="packCountWrap" class="hidden">
+          <label for="packCount">Количество текстур в паке</label>
+          <input id="packCount" type="number" min="2" max="10" value="4" />
+        </div>
+        <div>
+          <label style="margin-bottom:8px;">PBR-карты</label>
+          <div class="check-grid">
+            <label class="chk"><input type="checkbox" class="map-chk" value="normal" checked /> Normal</label>
+            <label class="chk"><input type="checkbox" class="map-chk" value="roughness" checked /> Roughness</label>
+            <label class="chk"><input type="checkbox" class="map-chk" value="height" checked /> Height</label>
+            <label class="chk"><input type="checkbox" class="map-chk" value="ao" checked /> AO</label>
+            <label class="chk"><input type="checkbox" class="map-chk" value="metallic" /> Metallic</label>
+          </div>
+        </div>
+        <div id="pbrSlidersWrap" class="row">
+          <div style="flex:1;">
+            <label for="pbrNormal">Normal</label>
+            <input id="pbrNormal" type="number" step="0.2" min="0.5" max="6" value="2.4" />
+          </div>
+          <div style="flex:1;">
+            <label for="pbrRough">Roughness</label>
+            <input id="pbrRough" type="number" step="0.05" min="0.05" max="1" value="0.65" />
+          </div>
+          <div style="flex:1;">
+            <label for="pbrAo">AO</label>
+            <input id="pbrAo" type="number" step="0.1" min="0" max="1.5" value="0.75" />
+          </div>
+        </div>
+      </div>
+
+      <div class="row" style="gap:8px;">
+        <button class="btn primary" style="flex:1;" id="genBtn" onclick="startGenerate()">
+          <svg class="ico" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span id="genBtnText">Создать 3D-модель</span>
+        </button>
+        <button class="btn" id="regenTexBtn" onclick="regenTexture()" disabled>Перетекстурить</button>
+      </div>
+
+      <div>
+        <label>Журнал</label>
+        <div id="logBox" class="log-box">Готов к работе.</div>
+      </div>
+
+      <div>
+        <label>История</label>
+        <div id="historyList" class="history-list"></div>
+      </div>
+    </aside>
+
+    <main>
+      <div class="toolbar">
+        <div class="tabs" role="tablist">
+          <button id="tab3dBtn" class="tab active" onclick="switchView('3d', this)">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7l9-5z"/></svg>
+            3D-просмотр
+          </button>
+          <button id="tab4SideBtn" class="tab" onclick="switchView('4side', this)">
+            <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/></svg>
+            4 стороны
+          </button>
+          <button id="tabUvBtn" class="tab" onclick="switchView('uv', this)">
+            <svg class="ico" viewBox="0 0 24 24"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/></svg>
+            UV и текстура
+          </button>
+          <button id="tabCodeBtn" class="tab" onclick="switchView('code', this)">
+            <svg class="ico" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            Код bpy
+          </button>
+          <button id="tabMapsBtn" class="tab hidden" onclick="switchView('maps', this)">
+            <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            Карты и тайлинг
+          </button>
+          <button id="tabPackBtn" class="tab hidden" onclick="switchView('pack', this)">
+            <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            Пак текстур
+          </button>
+        </div>
+
+        <div class="row">
+          <span id="polyStats" class="mono" style="color:var(--muted);font-size:12px;"></span>
+          <a id="dlGlbBtn" class="btn sm hidden" download="model.glb">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            GLB
+          </a>
+          <button id="openFolderBtn" class="btn sm hidden" onclick="openJobFolder()">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            Папка
+          </button>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div id="view-3d" style="height:100%;">
+          <div id="viewer3d">
+            <div id="pbrShapeBar" class="viewer-shape-bar tabs hidden">
+              <button class="tab active" onclick="setPbrShape('sphere', this)">Сфера</button>
+              <button class="tab" onclick="setPbrShape('cube', this)">Куб</button>
+              <button class="tab" onclick="setPbrShape('plane', this)">Плоскость</button>
+            </div>
+
+            <div id="genOverlay" class="gen-overlay hidden">
+              <div class="gen-card">
+                <div class="gen-steps">
+                  <span id="gStep1" class="gen-step active">1. Геометрия и UV</span>
+                  <span id="gStep2" class="gen-step">2. Текстура по UV</span>
+                  <span id="gStep3" class="gen-step">3. GLB</span>
+                </div>
+                <div class="row between">
+                  <span id="genMsg" style="font-size:13px;font-weight:500;">Построение 3D-модели...</span>
+                  <span id="genTimer" class="mono" style="font-size:12px;color:var(--muted);">00:00</span>
+                </div>
+                <div class="gen-bar-track"><div class="gen-bar-fill"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="view-4side" class="hidden">
+          <div class="img-card" style="max-width:860px;margin:0 auto;">
+            <h2>Рендер с 4 сторон</h2>
+            <img id="img4Side" alt="Превью 4 стороны" />
+          </div>
+        </div>
+
+        <div id="view-uv" class="hidden">
+          <div class="two-col">
+            <div class="img-card"><h2>Размеченный UV-гайд</h2><img id="imgUvGuide" alt="UV-гайд" /></div>
+            <div class="img-card"><h2>Цветовая 3D-карта сторон</h2><img id="imgUv3d" alt="3D-карта сторон" /></div>
+            <div class="img-card"><h2>Чистая UV-развёртка</h2><img id="imgUvClean" alt="Чистая UV-развёртка" /></div>
+            <div class="img-card"><h2>Итоговая текстура</h2><img id="imgTexture" alt="Итоговая текстура" /></div>
+          </div>
+        </div>
+
+        <div id="view-code" class="hidden" style="height:100%;">
+          <pre id="codeOut"></pre>
+        </div>
+
+        <div id="view-maps" class="hidden">
+          <div id="mapsGrid" class="two-col"></div>
+        </div>
+
+        <div id="view-pack" class="hidden">
+          <div class="row between" style="margin-bottom:12px;">
+            <h2 id="packTitleHeader">Пак текстур</h2>
+          </div>
+          <div id="packGrid" class="pack-grid"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- STARTUP WIZARD (2 STEPS: BLENDER + GEMINI COOKIES / API) -->
+  <div id="wizardModal" class="modal-bg" role="dialog" aria-modal="true" aria-labelledby="wizTitle">
+    <div class="modal" style="max-width:600px;">
+      <div class="row between" style="margin-bottom:12px;">
+        <div class="row" style="gap:12px;">
+          <h2 id="wizTitle">Мастер настройки</h2>
+          <div class="tabs" id="wizStepTabs">
+            <button id="wizStep1Tab" class="tab active" type="button" onclick="showWizStep(1)">1. Blender</button>
+            <button id="wizStep2Tab" class="tab" type="button" onclick="showWizStep(2)">2. Подключение ИИ</button>
+          </div>
+        </div>
+        <button class="btn sm hidden" id="wizCloseBtn" onclick="closeWizard()">Закрыть</button>
+      </div>
+
+      <!-- STEP 1: BLENDER -->
+      <div id="wizStep1" style="display:flex;flex-direction:column;gap:12px;">
+        <div id="wizScanState" style="color:var(--muted);font-size:13px;">Поиск установленного Blender на ПК...</div>
+        <div id="wizFoundList" class="history-list hidden"></div>
+        <div id="wizNotFoundBox" class="hidden box-panel">
+          <div style="font-weight:500;">Blender не найден ни в Steam, ни в системе</div>
+          <div style="color:var(--muted);font-size:12px;">Установите Python-модуль <span class="mono">bpy</span> (~356 МБ) или выберите <span class="mono">blender.exe</span> вручную.</div>
+        </div>
+        <div id="wizInstallLog" class="log-box hidden"></div>
+        <div class="row between" style="flex-wrap:wrap;">
+          <div class="row">
+            <button class="btn" type="button" onclick="rescanBlender()">Найти заново</button>
+            <button class="btn" type="button" onclick="browseBlender()">Выбрать blender.exe</button>
+          </div>
+          <div class="row">
+            <button class="btn primary hidden" id="wizUseBlenderBtn" onclick="confirmSelectedBlender()">Далее</button>
+            <button class="btn primary hidden" id="wizInstallBpyBtn" onclick="installBpyNow()">Установить bpy</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2: AI CONNECTION (PROXY + GEMINI COOKIES OR OPENAI API) -->
+      <div id="wizStep2" class="hidden" style="display:flex;flex-direction:column;gap:12px;">
+        <div class="box-panel">
+          <div class="row between">
+            <label for="wizProxyAddr" style="margin:0;">Прокси (опционально)</label>
+            <span id="wizProxyMsg" style="font-size:11px;color:var(--muted);"></span>
+          </div>
+          <div class="row">
+            <select id="wizProxyType" style="width:130px;flex-shrink:0;">
+              <option value="none">Без прокси</option>
+              <option value="http">HTTP</option>
+              <option value="socks5">SOCKS5</option>
+            </select>
+            <input id="wizProxyAddr" placeholder="127.0.0.1:1080 или user:pass@host:port" autocomplete="off" />
+            <button class="btn sm" type="button" style="flex-shrink:0;" onclick="testProxy('wizProxyType','wizProxyAddr','wizProxyMsg',this)">Проверить</button>
+          </div>
+        </div>
+
+        <div class="tabs" style="align-self:flex-start;">
+          <button id="wizAuthCookieTab" class="tab active" type="button" onclick="setWizAuthMode('gemini_cookies')">Куки Gemini</button>
+          <button id="wizAuthApiTab" class="tab" type="button" onclick="setWizAuthMode('openai_api')">OpenAI API</button>
+        </div>
+
+        <div id="wizCookiePane" style="display:flex;flex-direction:column;gap:8px;">
+          <div class="row between">
+            <label for="wizCookiesInput" style="margin:0;">Куки аккаунта Google Gemini (JSON, Netscape .txt, Cookie-строка или curl)</label>
+            <div>
+              <input id="wizCookieFile" type="file" accept=".json,.txt" class="hidden" onchange="loadCookieFileTo('wizCookiesInput','wizParsePreview',this)" />
+              <button class="btn xs" type="button" onclick="document.getElementById('wizCookieFile').click()">Загрузить файл</button>
+            </div>
+          </div>
+          <textarea id="wizCookiesInput" rows="6" oninput="previewCookies('wizCookiesInput','wizParsePreview')"></textarea>
+          <div id="wizParsePreview" class="parse-box hidden"></div>
+          <label for="wizCookieLabel">Название аккаунта (необязательно)</label>
+          <input id="wizCookieLabel" autocomplete="off" />
+          <div id="wizCookieErr" style="color:var(--red);font-size:12px;"></div>
+          <div class="row between" style="margin-top:4px;">
+            <button class="btn" type="button" onclick="showWizStep(1)">Назад</button>
+            <div class="row">
+              <button class="btn" type="button" onclick="closeWizard()">Позже</button>
+              <button class="btn primary" id="wizSaveCookieBtn" type="button" onclick="saveWizardCookies()">Подключить аккаунт</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="wizApiPane" class="hidden" style="display:flex;flex-direction:column;gap:8px;">
+          <label for="wizApiUrl">Base URL (OpenAI-совместимый)</label>
+          <input id="wizApiUrl" />
+          <label for="wizApiKey">API Key</label>
+          <input id="wizApiKey" type="password" />
+          <div class="row between" style="margin-top:8px;">
+            <button class="btn" type="button" onclick="showWizStep(1)">Назад</button>
+            <button class="btn primary" type="button" onclick="saveWizardApi()">Сохранить и завершить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS MODAL (TABBED: GEMINI COOKIES + OPENAI API/BLENDER) -->
+  <div id="settingsModal" class="modal-bg" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <div class="modal" style="max-width:680px;">
+      <div class="row between" style="margin-bottom:12px;">
+        <div class="row" style="gap:12px;">
+          <h2 id="setTitle">Настройки</h2>
+          <div class="tabs">
+            <button id="setTabCookies" class="tab active" type="button" onclick="switchSettingsTab('cookies')">Аккаунты Gemini (Куки)</button>
+            <button id="setTabApi" class="tab" type="button" onclick="switchSettingsTab('api')">OpenAI API и Blender</button>
+          </div>
+        </div>
+        <button class="btn sm" onclick="closeSettings()">Закрыть</button>
+      </div>
+
+      <!-- SETTINGS TAB 1: GEMINI COOKIES -->
+      <div id="setPaneCookies" style="display:flex;flex-direction:column;gap:12px;">
+        <div class="box-panel">
+          <div class="row between">
+            <div>
+              <div style="font-weight:500;">Режим провайдера ИИ</div>
+              <div style="font-size:12px;color:var(--muted);">Выберите откуда генерировать модели и текстуры</div>
+            </div>
+            <select id="sProviderMode" style="width:auto;min-width:210px;" onchange="onProviderModeChange()">
+              <option value="gemini_cookies">Встроенные куки Gemini</option>
+              <option value="openai_api">Внешний OpenAI API</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="box-panel">
+          <div class="row between">
+            <label for="setProxyAddr" style="margin:0;">Прокси (HTTP / SOCKS5)</label>
+            <span id="setProxyMsg" style="font-size:11px;color:var(--muted);"></span>
+          </div>
+          <div class="row">
+            <select id="setProxyType" style="width:130px;flex-shrink:0;">
+              <option value="none">Без прокси</option>
+              <option value="http">HTTP</option>
+              <option value="socks5">SOCKS5</option>
+            </select>
+            <input id="setProxyAddr" placeholder="127.0.0.1:1080 или user:pass@host:port" autocomplete="off" />
+            <button class="btn sm" type="button" style="flex-shrink:0;" onclick="testProxy('setProxyType','setProxyAddr','setProxyMsg',this)">Проверить</button>
+            <button class="btn sm" type="button" style="flex-shrink:0;" onclick="saveProxyFromSettings()">Сохранить</button>
+          </div>
+        </div>
+
+        <div class="box-panel">
+          <div class="row between">
+            <label for="setCookiesInput" style="margin:0;">Добавить аккаунт (JSON, Netscape .txt, Cookie-строка, curl)</label>
+            <div>
+              <input id="setCookieFile" type="file" accept=".json,.txt" class="hidden" onchange="loadCookieFileTo('setCookiesInput','setParsePreview',this)" />
+              <button class="btn xs" type="button" onclick="document.getElementById('setCookieFile').click()">Загрузить файл</button>
+            </div>
+          </div>
+          <textarea id="setCookiesInput" rows="4" oninput="previewCookies('setCookiesInput','setParsePreview')"></textarea>
+          <div id="setParsePreview" class="parse-box hidden"></div>
+          <div class="row">
+            <div style="flex:1;">
+              <label for="setCookieLabel">Название (необязательно)</label>
+              <input id="setCookieLabel" autocomplete="off" />
+            </div>
+            <button class="btn primary" id="setAddCookieBtn" type="button" style="align-self:flex-end;" onclick="addSettingsCookieAccount()">Добавить и проверить</button>
+          </div>
+          <div id="setCookieErr" style="color:var(--red);font-size:12px;"></div>
+        </div>
+
+        <div id="setAccountsList" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+
+      <!-- SETTINGS TAB 2: OPENAI API & BLENDER -->
+      <div id="setPaneApi" class="hidden">
+        <div style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px;">
+          <label for="sTextUrl">Text / Code API Base URL (OpenAI-совместимый)</label>
+          <input id="sTextUrl" />
+          <label for="sTextKey" style="margin-top:8px;">Text API Key</label>
+          <input id="sTextKey" type="password" />
+          <div class="row" style="margin-top:8px;align-items:flex-end;">
+            <div style="flex:1;">
+              <label for="sTextModel">Текстовая модель</label>
+              <input id="sTextModel" list="textModelsList" />
+              <datalist id="textModelsList"></datalist>
+            </div>
+            <button class="btn" type="button" onclick="fetchModelsFor('text')">Загрузить модели</button>
+          </div>
+        </div>
+
+        <div style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px;">
+          <label for="sImgUrl">Image API Base URL</label>
+          <input id="sImgUrl" />
+          <label for="sImgKey" style="margin-top:8px;">Image API Key</label>
+          <input id="sImgKey" type="password" />
+          <div class="row" style="margin-top:8px;align-items:flex-end;">
+            <div style="flex:1;">
+              <label for="sImgModel">Модель генерации картинок</label>
+              <input id="sImgModel" list="imgModelsList" />
+              <datalist id="imgModelsList"></datalist>
+            </div>
+            <button class="btn" type="button" onclick="fetchModelsFor('image')">Загрузить модели</button>
+          </div>
+        </div>
+
+        <div class="row">
+          <div style="flex:2;">
+            <label for="sBlenderPath">Путь к blender.exe</label>
+            <input id="sBlenderPath" />
+          </div>
+          <div style="flex:1;">
+            <label for="sRetries">Повторов при ошибке</label>
+            <input id="sRetries" type="number" min="1" max="5" value="3" />
+          </div>
+        </div>
+
+        <div id="setMsg" style="margin-top:8px;font-size:12px;color:var(--muted);"></div>
+        <div class="row between" style="margin-top:16px;">
+          <span></span>
+          <div class="row">
+            <button class="btn" onclick="closeSettings()">Отмена</button>
+            <button class="btn primary" onclick="saveSettings()">Сохранить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="/ui/viewer3d.js"></script>
+<script src="/ui/app.js"></script>
+</body>
+</html>
