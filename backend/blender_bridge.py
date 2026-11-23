@@ -93,29 +93,57 @@ def build_uv_guide_and_previews(job_dir: Path) -> dict:
     mask = Image.new("L", (guide_size, guide_size), 0)
     mdraw = ImageDraw.Draw(mask)
 
-    font_big = _load_font(24)
+    font_big = _load_font(20)
+    font_small = _load_font(14)
     compact_islands = []
 
     for isl in manifest.get("islands", []):
-        rgb = tuple(isl["rgb"])
-        for poly in isl.get("polys", []):
-            pts = [(u * (guide_size - 1), (1.0 - v) * (guide_size - 1)) for (u, v) in poly]
-            if len(pts) >= 3:
-                draw_ui.polygon(pts, fill=rgb, outline=(240, 242, 246))
-                draw_ai.polygon(pts, fill=(84, 88, 96), outline=(108, 114, 124))
-                mdraw.polygon(pts, fill=255)
+        base_rgb = isl["rgb"]
+        sub_list = isl.get("sub_islands") or [{"axis": "", "parts": isl.get("parts", []), "bbox_uv": isl["bbox_uv"], "polys": isl.get("polys", [])}]
+        compact_subs = []
+
+        for s_idx, sub in enumerate(sub_list):
+            delta = ((s_idx % 3) - 1) * 16
+            sub_rgb = tuple(max(18, min(245, c + delta)) for c in base_rgb)
+            for poly in sub.get("polys", []):
+                pts = [(u * (guide_size - 1), (1.0 - v) * (guide_size - 1)) for (u, v) in poly]
+                if len(pts) >= 3:
+                    draw_ui.polygon(pts, fill=sub_rgb, outline=(240, 242, 246))
+                    draw_ai.polygon(pts, fill=(92, 96, 104), outline=(138, 144, 154))
+                    mdraw.polygon(pts, fill=255)
+
+            su0, sv0, su1, sv1 = sub["bbox_uv"]
+            sx0 = int(su0 * (guide_size - 1))
+            sx1 = int(su1 * (guide_size - 1))
+            sy0 = int((1.0 - sv1) * (guide_size - 1))
+            sy1 = int((1.0 - sv0) * (guide_size - 1))
+            parts = sub.get("parts") or []
+            sw = sx1 - sx0
+            sh = sy1 - sy0
+            if parts and sw >= 46 and sh >= 24:
+                max_chars = max(4, min(18, (sw - 8) // 8))
+                tag = ",".join(parts)[:max_chars]
+                scx, scy = (sx0 + sx1) // 2, (sy0 + sy1) // 2
+                tw = min(sw - 4, len(tag) * 8 + 8)
+                draw_ui.rectangle([scx - tw // 2, scy - 10, scx + tw // 2, scy + 10], fill=(14, 15, 18))
+                draw_ui.text((scx, scy), tag, fill=(244, 246, 250), font=font_small, anchor="mm")
+
+            compact_subs.append({
+                "axis": sub.get("axis", ""),
+                "parts": parts,
+                "bbox_uv": sub["bbox_uv"],
+            })
 
         u0, v0, u1, v1 = isl["bbox_uv"]
         x0 = int(u0 * (guide_size - 1))
         x1 = int(u1 * (guide_size - 1))
         y0 = int((1.0 - v1) * (guide_size - 1))
         y1 = int((1.0 - v0) * (guide_size - 1))
-        cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
 
         draw_ui.rectangle([x0, y0, x1, y1], outline=(245, 246, 248), width=2)
         lbl = f"{isl['name']} ({isl['color_name']})"
-        draw_ui.rectangle([cx - 125, cy - 18, cx + 125, cy + 18], fill=(14, 15, 18))
-        draw_ui.text((cx, cy), lbl[:22], fill=(248, 248, 250), font=font_big, anchor="mm")
+        draw_ui.rectangle([x0 + 4, y0 + 4, min(x1 - 4, x0 + 236), y0 + 32], fill=(14, 15, 18))
+        draw_ui.text((x0 + 12, y0 + 18), lbl[:24], fill=(248, 248, 250), font=font_big, anchor="lm")
 
         compact_islands.append({
             "index": isl["index"],
@@ -125,6 +153,7 @@ def build_uv_guide_and_previews(job_dir: Path) -> dict:
             "rgb": isl["rgb"],
             "bbox_uv": isl["bbox_uv"],
             "parts": isl.get("parts", []),
+            "sub_islands": compact_subs,
         })
 
     draw_ai.line([(guide_size // 2, 0), (guide_size // 2, guide_size)], fill=(45, 48, 56), width=2)
@@ -176,7 +205,7 @@ def bleed_and_prepare_texture(
         for x, y in dark_edge:
             mpx[x, y] = 0
 
-        for _ in range(6):
+        for _ in range(4):
             updates = []
             for y in range(target_size):
                 for x in range(target_size):

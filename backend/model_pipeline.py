@@ -36,9 +36,10 @@ CRITICAL OUTPUT FORMAT — return TWO blocks in order:
 BLENDER SCRIPT RULES:
 1. Assume an empty Blender scene (`bpy` and `bmesh` are available; do NOT call `bpy.ops.wm.read_factory_settings`).
 2. Coordinate convention: `-Y` = FRONT (facing viewer), `+Y` = BACK, `-X` = LEFT, `+X` = RIGHT, `+Z` = UP. Build upright with bottom near `Z = 0` and centered at `X = 0, Y = 0`.
-3. Topology & Style: {style_rules}
-4. Create semantic material slots (`FRONT`, `BACK`, `LEFT`, `RIGHT`, `TOP`, `BOTTOM`, `SCREEN`, `LABEL`, `PANEL`, `METAL`, `TRIM`, etc.) and assign every polygon to its matching slot before joining.
-5. Unwrap cleanly with `bpy.ops.uv.smart_project(...)` or planar projection; do NOT save files or render (the runner normalizes scale, packs the 2x2 semantic atlas, and saves `stage1.blend`).
+3. Topology & UV-Friendly Modeling: {style_rules}
+   - Build distinct sub-parts cleanly (separate meshes or disconnected shells for wheels/tires, windshields/glass/canopy, headlights/taillights, spoilers, mirrors, doors, handles) and call `bmesh.ops.recalc_face_normals(bm, faces=bm.faces)` on every generated `bmesh`.
+4. Create distinct semantic material slots matching each part's role (`BODY`, `WINDSHIELD`/`GLASS`/`CANOPY`, `WHEEL`/`TIRE`, `HEADLIGHT`, `TAILLIGHT`, `GRILLE`, `EXHAUST`, `SPOILER`, `TRIM`/`METAL`, `SCREEN`, `LABEL`, `FRONT`, `BACK`, `TOP`, `BOTTOM`, etc.) and assign every polygon to its matching slot before joining. This lets the deterministic UV packer isolate glass, wheels, lights, and body panels into clean, non-overlapping islands!
+5. Do NOT save files, render, or pack final UVs yourself (the runner normalizes scale, packs the overlap-free 2x2 semantic atlas, and saves `stage1.blend`).
 6. Use only valid Blender 4/5 `bpy` / `bmesh` APIs.
 """
 
@@ -53,7 +54,16 @@ def _build_uv_texture_prompt(user_prompt: str, style: str, manifest: dict, llm_g
         name = isl["name"]
         parts_str = ", ".join(isl.get("parts") or [name])
         extra = guide_zones.get(name, "")
+        sub_descs = []
+        for sub in (isl.get("sub_islands") or [])[:10]:
+            sp = "/".join(sub.get("parts") or [])
+            ax = sub.get("axis", "")
+            if sp:
+                sub_descs.append(f"{sp}({ax})" if ax else sp)
+        sub_str = "; ".join(sub_descs)
         desc = f"{extra} (parts: {parts_str})" if extra else f"surface for: {parts_str}"
+        if sub_str:
+            desc += f" [separated islands: {sub_str}]"
         legend_lines.append(
             f"- {isl['quadrant']} quadrant ({name}, shown in {isl['color_name']} on Image 2) -> {desc}"
         )
